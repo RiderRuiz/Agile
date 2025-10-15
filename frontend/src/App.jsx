@@ -17,6 +17,14 @@ function roundMoney(value) {
   return Math.round(value * 100) / 100;
 }
 
+function calculatePenalty(amount, rate = 0.05) {
+  const base = Number(amount);
+  if (!Number.isFinite(base) || base <= 0) {
+    return 0;
+  }
+  return roundMoney(base * rate);
+}
+
 function toISODate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -107,7 +115,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
   const [loans, setLoans] = useState([]);
-  const [standaloneDebts, setStandaloneDebts] = useState([]);
+  const [overdueDebts, setOverdueDebts] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [loanForm, setLoanForm] = useState({
     name: "",
@@ -124,7 +132,7 @@ export default function App() {
     setUser(null);
     setToken(null);
     setLoans([]);
-    setStandaloneDebts([]);
+    setOverdueDebts([]);
     setNotifications([]);
     setLoanForm({ name: "", principal: "", interest: "", startDate: "", notes: "", installmentsCount: "", frequencyDays: "30" });
     setInstallmentList([]);
@@ -157,14 +165,29 @@ export default function App() {
       const debtsData = await debtsRes.json();
       const singles = debtsData.filter((d) => !d.loan_id);
 
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const overdueLoanInstallments = loansData.flatMap((loan) =>
+        (loan.installments || [])
+          .filter(
+            (inst) => inst.status !== "paid" && new Date(inst.due_date) < today
+          )
+          .map((inst) => ({ ...inst, loanName: loan.name }))
+      );
+
+      const overdueSingles = singles
+        .filter((item) => item.status !== "paid" && new Date(item.due_date) < today)
+        .map((item) => ({ ...item, loanName: null }));
+
       setLoans(loansData);
-      setStandaloneDebts(singles);
+      setOverdueDebts([...overdueLoanInstallments, ...overdueSingles]);
 
       const upcoming = [
         ...loansData.flatMap((loan) =>
           (loan.installments || []).map((inst) => ({ ...inst, loanName: loan.name }))
         ),
-        ...singles
+        ...singles.map((item) => ({ ...item, loanName: null }))
       ].filter(
         (inst) =>
           inst.status !== "paid" &&
@@ -221,24 +244,6 @@ export default function App() {
       await loadData();
     } catch (err) {
       alert(err.message || "Error al marcar pagado");
-    }
-  };
-
-  const addReminder = async (id) => {
-    if (!token) return;
-    try {
-      const res = await fetch(`${API}/api/reminders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ debt_id: id })
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "No se pudo crear el recordatorio");
-      }
-      alert("Recordatorio agregado");
-    } catch (err) {
-      alert(err.message || "Error al crear recordatorio");
     }
   };
 
@@ -360,7 +365,8 @@ export default function App() {
     );
   }
 
-  const totalStandalonePending = standaloneDebts.filter((d) => d.status !== "paid").length;
+  const penaltyRate = 0.05;
+  const totalOverdue = overdueDebts.length;
 
   return (
     <div style={{ maxWidth: 1100, margin: "20px auto", display: "grid", gridTemplateColumns: "1fr 320px", gap: 20 }}>
@@ -538,12 +544,7 @@ export default function App() {
                         <td style={{ padding: 8 }}>{inst.status === "paid" ? "Pagada" : "Pendiente"}</td>
                         <td style={{ padding: 8 }}>
                           {inst.status !== "paid" && (
-                            <>
-                              <button style={{ marginRight: 8 }} onClick={() => markPaid(inst.id)}>
-                                Marcar pagada
-                              </button>
-                              <button onClick={() => addReminder(inst.id)}>Recordarme</button>
-                            </>
+                            <button onClick={() => markPaid(inst.id)}>Marcar pagada</button>
                           )}
                         </td>
                       </tr>
@@ -556,44 +557,46 @@ export default function App() {
         </section>
 
         <section style={{ marginTop: 18 }}>
-          <h3>Deudas sueltas</h3>
-          {standaloneDebts.length === 0 ? (
-            <p>No tienes deudas fuera de prestamos.</p>
+          <h3>Deudas con mora (5%)</h3>
+          {overdueDebts.length === 0 ? (
+            <p>No tienes deudas vencidas con mora.</p>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
+                  <th style={{ textAlign: "left", padding: 6 }}>Origen</th>
                   <th style={{ textAlign: "left", padding: 6 }}>Deuda</th>
                   <th style={{ textAlign: "left", padding: 6 }}>Vencimiento</th>
-                  <th style={{ textAlign: "left", padding: 6 }}>Monto</th>
-                  <th style={{ textAlign: "left", padding: 6 }}>Estado</th>
+                  <th style={{ textAlign: "left", padding: 6 }}>Monto base</th>
+                  <th style={{ textAlign: "left", padding: 6 }}>Mora (5%)</th>
+                  <th style={{ textAlign: "left", padding: 6 }}>Total con mora</th>
                   <th style={{ textAlign: "left", padding: 6 }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {standaloneDebts.map((debt) => (
-                  <tr key={debt.id} style={{ borderTop: "1px solid #eee" }}>
-                    <td style={{ padding: 8 }}>{debt.name}</td>
-                    <td style={{ padding: 8 }}>{debt.due_date}</td>
-                    <td style={{ padding: 8 }}>S/ {formatCurrency(debt.amount)}</td>
-                    <td style={{ padding: 8 }}>{debt.status === "paid" ? "Pagada" : "Pendiente"}</td>
-                    <td style={{ padding: 8 }}>
-                      {debt.status !== "paid" && (
-                        <>
-                          <button style={{ marginRight: 8 }} onClick={() => markPaid(debt.id)}>
-                            Marcar pagada
-                          </button>
-                          <button onClick={() => addReminder(debt.id)}>Recordarme</button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {overdueDebts.map((debt) => {
+                  const baseAmount = Number(debt.amount) || 0;
+                  const penaltyAmount = calculatePenalty(baseAmount, penaltyRate);
+                  const totalWithPenalty = roundMoney(baseAmount + penaltyAmount);
+                  return (
+                    <tr key={debt.id} style={{ borderTop: "1px solid #eee" }}>
+                      <td style={{ padding: 8 }}>{debt.loanName || "Deuda suelta"}</td>
+                      <td style={{ padding: 8 }}>{debt.name}</td>
+                      <td style={{ padding: 8 }}>{debt.due_date}</td>
+                      <td style={{ padding: 8 }}>S/ {formatCurrency(baseAmount)}</td>
+                      <td style={{ padding: 8 }}>S/ {formatCurrency(penaltyAmount)}</td>
+                      <td style={{ padding: 8 }}>S/ {formatCurrency(totalWithPenalty)}</td>
+                      <td style={{ padding: 8 }}>
+                        <button onClick={() => markPaid(debt.id)}>Marcar pagada</button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
           <div style={{ marginTop: 6, fontSize: 14, color: "#555" }}>
-            Pendientes: {totalStandalonePending}
+            Pendientes vencidas: {totalOverdue}
           </div>
         </section>
       </div>
