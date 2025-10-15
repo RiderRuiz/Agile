@@ -319,7 +319,6 @@ export default function App() {
       }
       alert("Prestamo creado correctamente");
       setLoanForm({ name: "", principal: "", interest: "", startDate: "", notes: "", installmentsCount: "", frequencyDays: "30" });
-      setInstallmentDraft({ name: "", amount: "", due_date: "" });
       setInstallmentList([]);
       await loadData();
     } catch (err) {
