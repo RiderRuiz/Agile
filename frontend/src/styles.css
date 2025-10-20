@@ -1,0 +1,54 @@
+body {
+  background-color: #f5f7fb;
+}
+
+.auth-wrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: linear-gradient(135deg, #eef2ff 0%, #f9fafc 100%);
+}
+
+.auth-card {
+  max-width: 420px;
+  width: 100%;
+}
+
+.section-card {
+  border: none;
+  border-radius: 0.75rem;
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.08);
+}
+
+.section-card .card-header {
+  border-bottom: none;
+  background-color: transparent;
+  font-weight: 600;
+}
+
+.table thead th {
+  white-space: nowrap;
+  font-weight: 600;
+  color: #334155;
+}
+
+.table tbody td {
+  vertical-align: middle;
+}
+
+.badge-status {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.notifications-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.notifications-list li + li {
+  margin-top: 0.75rem;
+}

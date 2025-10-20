@@ -7,6 +7,7 @@ const authRoutes = require('./routes/auth');
 const debtRoutes = require('./routes/debts');
 const reminderRoutes = require('./routes/reminders');
 const loanRoutes = require('./routes/loans');
+const paymentRoutes = require('./routes/payments');
 
 const app = express();
 app.use(cors());
@@ -16,6 +17,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/debts', debtRoutes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/loans', loanRoutes);
+app.use('/api/payments', paymentRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 

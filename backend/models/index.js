@@ -14,6 +14,9 @@ Debt.belongsTo(Loan, { foreignKey: 'loan_id', as: 'loan' });
 User.hasMany(Debt, { foreignKey: 'user_id' });
 Debt.belongsTo(User, { foreignKey: 'user_id' });
 
+Debt.hasMany(Payment, { foreignKey: 'debt_id', as: 'payments' });
+Payment.belongsTo(Debt, { foreignKey: 'debt_id', as: 'debt' });
+
 module.exports = {
   sequelize,
   User,

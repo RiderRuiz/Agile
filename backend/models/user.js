@@ -4,11 +4,24 @@ const sequelize = require('../config/sequelize');
 const User = sequelize.define('User', {
   id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
   name: { type: DataTypes.STRING(120) },
-  email: { type: DataTypes.STRING(200), unique: true, allowNull: false },
-  password: { type: DataTypes.STRING(255), allowNull: false },
+  email: { type: DataTypes.STRING(200), unique: true, allowNull: false, validate: { isEmail: true } },
+  password: { type: DataTypes.STRING(255), allowNull: false, validate: { notEmpty: true } },
 }, {
   tableName: 'users',
-  timestamps: false
+  timestamps: false,
+  hooks: {
+    beforeValidate(user) {
+      if (user.email) {
+        user.email = user.email.toLowerCase().trim();
+      }
+      if (user.name) {
+        user.name = user.name.trim();
+      }
+      if (user.password) {
+        user.password = user.password.trim();
+      }
+    }
+  }
 });
 
 User.prototype.verifyPassword = function(password) {
