@@ -29,7 +29,9 @@ async function listPayments(req, res) {
         debt_id: debt.id,
         debt_name: debt.name,
         due_date: debt.due_date,
-        loan_name: loan ? loan.name : null
+        loan_name: loan ? loan.name : null,
+        method: payment.method,
+        reference: payment.reference
       };
     });
 

@@ -6,6 +6,7 @@ const User = sequelize.define('User', {
   name: { type: DataTypes.STRING(120) },
   email: { type: DataTypes.STRING(200), unique: true, allowNull: false, validate: { isEmail: true } },
   password: { type: DataTypes.STRING(255), allowNull: false, validate: { notEmpty: true } },
+  phone: { type: DataTypes.STRING(20), allowNull: true },
 }, {
   tableName: 'users',
   timestamps: false,
@@ -19,6 +20,9 @@ const User = sequelize.define('User', {
       }
       if (user.password) {
         user.password = user.password.trim();
+      }
+      if (user.phone) {
+        user.phone = user.phone.trim();
       }
     }
   }

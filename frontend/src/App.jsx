@@ -4,7 +4,15 @@ import autoTable from "jspdf-autotable";
 
 const API = import.meta.env?.VITE_API_URL || "http://localhost:4000";
 const ONE_WEEK_MS = 1000 * 60 * 60 * 24 * 7;
-const INITIAL_AUTH_FORM = { name: "", email: "", password: "" };
+const PAYMENT_METHODS = [
+  { value: "tarjeta", label: "Tarjeta" },
+  { value: "yape", label: "Yape" },
+  { value: "plin", label: "Plin" },
+  { value: "transferencia", label: "Transferencia" },
+  { value: "efectivo", label: "Efectivo" },
+  { value: "otro", label: "Otro" }
+];
+const INITIAL_AUTH_FORM = { name: "", email: "", password: "", phone: "" };
 const INITIAL_LOAN_FORM = {
   name: "",
   principal: "",
@@ -41,6 +49,30 @@ function normalizeInterestPercent(value) {
 function buildNotificationText(item) {
   const base = item.loanName ? `${item.loanName} - ${item.name}` : item.name;
   return `${base} vence el ${formatDateDisplay(item.due_date)}`;
+}
+
+function getDueState(dueDate, status) {
+  if (status === "paid") return "paid";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate);
+  if (Number.isNaN(due.getTime())) return "pending";
+  const diff = due.getTime() - today.getTime();
+  if (diff < 0) return "overdue";
+  if (diff <= ONE_WEEK_MS) return "week";
+  return "pending";
+}
+
+function shouldShowInstallment(inst, showAll) {
+  if (showAll) return true;
+  const due = new Date(inst.due_date);
+  if (Number.isNaN(due.getTime())) return true;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const sameMonth = due.getFullYear() === now.getFullYear() && due.getMonth() === now.getMonth();
+  const previousUnpaid = due < startOfMonth && inst.status !== "paid";
+  return sameMonth || previousUnpaid;
 }
 
 function generateInstallmentPlan(form) {
@@ -117,10 +149,10 @@ function generateInstallmentPlan(form) {
 
 export default function App() {
   const [authMode, setAuthMode] = useState("login");
-const [form, setForm] = useState(INITIAL_AUTH_FORM);
-const [authError, setAuthError] = useState(null);
-const [authFeedback, setAuthFeedback] = useState(null);
-const [appMessage, setAppMessage] = useState(null);
+  const [form, setForm] = useState(INITIAL_AUTH_FORM);
+  const [authError, setAuthError] = useState(null);
+  const [authFeedback, setAuthFeedback] = useState(null);
+  const [appMessage, setAppMessage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
@@ -130,6 +162,10 @@ const [appMessage, setAppMessage] = useState(null);
   const [payments, setPayments] = useState([]);
   const [loanForm, setLoanForm] = useState(INITIAL_LOAN_FORM);
   const [installmentList, setInstallmentList] = useState([]);
+  const [showAllDebts, setShowAllDebts] = useState(false);
+  const [paymentModal, setPaymentModal] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState("tarjeta");
+  const [paymentReference, setPaymentReference] = useState("");
 
   const isAuthenticated = Boolean(token);
 
@@ -253,6 +289,7 @@ const [appMessage, setAppMessage] = useState(null);
       };
       if (authMode === "register") {
         payload.name = form.name.trim();
+        payload.phone = form.phone.trim();
       }
 
       const res = await fetch(`${API}/api/auth/${authMode === "login" ? "login" : "register"}`, {
@@ -361,6 +398,9 @@ const [appMessage, setAppMessage] = useState(null);
 
   const downloadPaymentReceipt = (payment) => {
     if (!payment) return;
+    const methodLabel = payment.method
+      ? payment.method.charAt(0).toUpperCase() + payment.method.slice(1)
+      : "No especificado";
     const doc = new jsPDF();
     doc.setFontSize(16);
     doc.text("Comprobante de pago", 14, 18);
@@ -370,7 +410,8 @@ const [appMessage, setAppMessage] = useState(null);
       `Cuota: ${payment.debt_name}`,
       `Fecha de vencimiento: ${formatDateDisplay(payment.due_date)}`,
       `Fecha de pago: ${formatDateDisplay(payment.paid_at)}`,
-      `Monto pagado: ${formatCurrency(payment.amount)}`
+      `Monto pagado: ${formatCurrency(payment.amount)}`,
+      `Medio: ${methodLabel}`
     ].filter(Boolean);
 
     doc.setFontSize(11);
@@ -385,6 +426,7 @@ const [appMessage, setAppMessage] = useState(null);
         ["Prestamo", payment.loan_name || "Deuda suelta"],
         ["Cuota", payment.debt_name || "-"],
         ["Monto", formatCurrency(payment.amount)],
+        ["Medio", methodLabel],
         ["Vencimiento", formatDateDisplay(payment.due_date)],
         ["Pago registrado", formatDateDisplay(payment.paid_at)]
       ]
@@ -475,18 +517,25 @@ const [appMessage, setAppMessage] = useState(null);
   };
 
   const markPaid = async (id, options = {}) => {
-    if (!token) return;
+    if (!token) return false;
     if (options.loanHasOverdue) {
       setAppMessage({
         type: "warning",
         text: "Debes regularizar primero las cuotas en mora de este préstamo."
       });
-      return;
+      return false;
     }
+    const payload = {};
+    if (options.method) payload.method = options.method;
+    if (options.reference) payload.reference = options.reference;
     try {
       const res = await fetch(`${API}/api/debts/${id}/pay`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -501,15 +550,50 @@ const [appMessage, setAppMessage] = useState(null);
             debt_id: data.payment.debt_id,
             debt_name: data.payment.debt_name,
             due_date: data.payment.due_date,
-            loan_name: data.payment.loan_name
+            loan_name: data.payment.loan_name,
+            method: data.payment.method,
+            reference: data.payment.reference
           },
           ...prev
         ]);
       }
       await loadData();
       setAppMessage({ type: "success", text: "Pago registrado correctamente." });
+      return true;
     } catch (err) {
       setAppMessage({ type: "danger", text: err.message });
+      return false;
+    }
+  };
+
+  const openPaymentModal = (debt, options = {}) => {
+    if (options.loanHasOverdue) {
+      setAppMessage({
+        type: "warning",
+        text: "Debes regularizar primero las cuotas en mora de este préstamo."
+      });
+      return;
+    }
+    setPaymentModal({
+      id: debt.id,
+      name: debt.name,
+      amount: debt.amount,
+      due_date: debt.due_date,
+      loanName: options.loanName || null
+    });
+    setPaymentMethod("tarjeta");
+    setPaymentReference("");
+  };
+
+  const confirmPayment = async () => {
+    if (!paymentModal) return;
+    const ok = await markPaid(paymentModal.id, {
+      method: paymentMethod,
+      reference: paymentReference
+    });
+    if (ok) {
+      setPaymentModal(null);
+      setPaymentReference("");
     }
   };
 
@@ -530,18 +614,19 @@ const [appMessage, setAppMessage] = useState(null);
     return (loans || []).map((loan) => {
       const loanOverdueIds = overdueByLoan.get(loan.id) || new Set();
       const filteredInstallments = (loan.installments || []).filter(
-        (inst) => !loanOverdueIds.has(inst.id)
+        (inst) => !loanOverdueIds.has(inst.id) && shouldShowInstallment(inst, showAllDebts)
       );
       const visiblePending = filteredInstallments.filter((inst) => inst.status !== "paid").length;
       return {
         ...loan,
-        installments: filteredInstallments,
+        installments: loan.installments || [],
+        visible_installments: filteredInstallments,
         hasOverdue: loanOverdueIds.size > 0,
         visible_pending: visiblePending,
         overdue_count: loanOverdueIds.size
       };
     });
-  }, [loans, overdueByLoan]);
+  }, [loans, overdueByLoan, showAllDebts]);
   const totalOverdue = useMemo(() => overdueDebts.length, [overdueDebts]);
 
   if (!isAuthenticated) {
@@ -576,6 +661,18 @@ const [appMessage, setAppMessage] = useState(null);
                     onChange={(e) => handleFormChange("name", e.target.value)}
                     placeholder="Tu nombre"
                     required
+                  />
+                </div>
+              )}
+              {authMode === "register" && (
+                <div className="mb-3">
+                  <label className="form-label">Telefono (para notificaciones)</label>
+                  <input
+                    type="tel"
+                    className="form-control"
+                    value={form.phone}
+                    onChange={(e) => handleFormChange("phone", e.target.value)}
+                    placeholder="+51 999 999 999"
                   />
                 </div>
               )}
@@ -770,10 +867,24 @@ const [appMessage, setAppMessage] = useState(null);
             </div>
 
             <div className="card section-card">
-              <div className="card-header">
+              <div className="card-header d-flex align-items-center justify-content-between gap-2">
                 <h5 className="mb-0">Prestamos activos</h5>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary"
+                  onClick={() => setShowAllDebts((prev) => !prev)}
+                >
+                  {showAllDebts ? "Ver solo mes actual" : "Ver todas las cuotas"}
+                </button>
               </div>
               <div className="card-body">
+                <div className="d-flex justify-content-between align-items-center mb-3 text-muted small">
+                  <span>
+                    {showAllDebts
+                      ? "Mostrando todas las cuotas."
+                      : "Mostrando cuotas del mes y pendientes de meses previos."}
+                  </span>
+                </div>
                 {pendingLoans.length === 0 ? (
                   <p className="text-muted mb-0">No tienes prestamos registrados.</p>
                 ) : (
@@ -818,31 +929,51 @@ const [appMessage, setAppMessage] = useState(null);
                             </tr>
                           </thead>
                           <tbody>
-                            {(loan.installments || []).map((inst) => (
-                              <tr key={inst.id}>
-                                <td>{inst.name}</td>
-                                <td>{formatDateDisplay(inst.due_date)}</td>
-                                <td>{formatCurrency(inst.amount)}</td>
-                                <td>
-                                  <span
-                                    className={`badge badge-status ${inst.status === "paid" ? "bg-success" : "bg-warning text-dark"}`}
-                                  >
-                                    {inst.status === "paid" ? "Pagada" : "Pendiente"}
-                                  </span>
-                                </td>
-                                <td className="text-end">
-                                  {inst.status !== "paid" && (
-                                    <button
-                                      className="btn btn-sm btn-outline-primary"
-                                      onClick={() => markPaid(inst.id, { loanHasOverdue: loan.hasOverdue })}
-                                      disabled={loan.hasOverdue}
-                                    >
-                                      Registrar pago
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
+                            {(loan.visible_installments || loan.installments || []).map((inst) => {
+                              const dueState = getDueState(inst.due_date, inst.status);
+                              const rowClass =
+                                dueState === "overdue"
+                                  ? "row-overdue"
+                                  : dueState === "week"
+                                    ? "row-due-soon"
+                                    : "";
+                              const badgeClass =
+                                dueState === "overdue"
+                                  ? "bg-danger text-white"
+                                  : dueState === "week"
+                                    ? "bg-warning text-dark"
+                                    : inst.status === "paid"
+                                      ? "bg-success"
+                                      : "bg-secondary-subtle text-secondary";
+                              return (
+                                <tr key={inst.id} className={rowClass}>
+                                  <td>{inst.name}</td>
+                                  <td>{formatDateDisplay(inst.due_date)}</td>
+                                  <td>{formatCurrency(inst.amount)}</td>
+                                  <td>
+                                    <span className={`badge badge-status ${badgeClass}`}>
+                                      {inst.status === "paid" ? "Pagada" : "Pendiente"}
+                                    </span>
+                                  </td>
+                                  <td className="text-end">
+                                    {inst.status !== "paid" && (
+                                      <button
+                                        className="btn btn-sm btn-outline-primary"
+                                        onClick={() =>
+                                          openPaymentModal(inst, {
+                                            loanHasOverdue: loan.hasOverdue,
+                                            loanName: loan.name
+                                          })
+                                        }
+                                        disabled={loan.hasOverdue}
+                                      >
+                                        Registrar pago
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -882,7 +1013,7 @@ const [appMessage, setAppMessage] = useState(null);
                           const penaltyAmount = Math.round(baseAmount * 0.05 * 100) / 100;
                           const totalWithPenalty = Math.round((baseAmount + penaltyAmount) * 100) / 100;
                           return (
-                            <tr key={`${debt.loanName || "solo"}-${debt.id}`}>
+                            <tr key={`${debt.loanName || "solo"}-${debt.id}`} className="row-overdue">
                               <td>{debt.loanName || "Deuda suelta"}</td>
                               <td>{debt.name}</td>
                               <td>{formatDateDisplay(debt.due_date)}</td>
@@ -890,7 +1021,12 @@ const [appMessage, setAppMessage] = useState(null);
                               <td>{formatCurrency(penaltyAmount)}</td>
                               <td>{formatCurrency(totalWithPenalty)}</td>
                               <td className="text-end">
-                                <button className="btn btn-sm btn-outline-primary" onClick={() => markPaid(debt.id)}>
+                                <button
+                                  className="btn btn-sm btn-outline-primary"
+                                  onClick={() =>
+                                    openPaymentModal(debt, { loanName: debt.loanName || null })
+                                  }
+                                >
                                   Registrar pago
                                 </button>
                               </td>
@@ -940,6 +1076,7 @@ const [appMessage, setAppMessage] = useState(null);
                         <tr>
                           <th>Fecha pago</th>
                           <th>Cuota</th>
+                          <th>Medio</th>
                           <th>Monto</th>
                           <th></th>
                         </tr>
@@ -953,6 +1090,12 @@ const [appMessage, setAppMessage] = useState(null);
                               <div className="text-muted small">
                                 {payment.loan_name || "Deuda suelta"}
                               </div>
+                            </td>
+                            <td className="text-capitalize">
+                              {payment.method || "sin especificar"}
+                              {payment.reference ? (
+                                <div className="text-muted small">Ref: {payment.reference}</div>
+                              ) : null}
                             </td>
                             <td>{formatCurrency(payment.amount)}</td>
                             <td className="text-end">
@@ -974,6 +1117,73 @@ const [appMessage, setAppMessage] = useState(null);
           </div>
         </div>
       </div>
+      {paymentModal && (
+        <div className="payment-modal-overlay">
+          <div className="payment-modal card shadow-lg">
+            <div className="card-body">
+              <div className="d-flex justify-content-between align-items-start mb-3">
+                <div>
+                  <h5 className="mb-1">Registrar pago</h5>
+                  <div className="text-muted small">
+                    {paymentModal.loanName ? `${paymentModal.loanName} - ` : ""}
+                    {paymentModal.name}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={() => setPaymentModal(null)}
+                  aria-label="Cerrar modal de pago"
+                >
+                  X
+                </button>
+              </div>
+
+              <div className="mb-3">
+                <div className="fw-semibold">Monto: {formatCurrency(paymentModal.amount)}</div>
+                <div className="text-muted small">
+                  Vence: {formatDateDisplay(paymentModal.due_date)}
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label">Medio de pago</label>
+                <select
+                  className="form-select"
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                >
+                  {PAYMENT_METHODS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mb-4">
+                <label className="form-label">Referencia (opcional)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={paymentReference}
+                  onChange={(e) => setPaymentReference(e.target.value)}
+                  placeholder="Ultimos 4 de la tarjeta, codigo de operacion, etc."
+                />
+              </div>
+
+              <div className="d-flex justify-content-end gap-2">
+                <button type="button" className="btn btn-outline-secondary" onClick={() => setPaymentModal(null)}>
+                  Cancelar
+                </button>
+                <button type="button" className="btn btn-primary" onClick={confirmPayment}>
+                  Confirmar pago
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

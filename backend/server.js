@@ -8,6 +8,7 @@ const debtRoutes = require('./routes/debts');
 const reminderRoutes = require('./routes/reminders');
 const loanRoutes = require('./routes/loans');
 const paymentRoutes = require('./routes/payments');
+const { scheduleTodayNotifier } = require('./notifier');
 
 const app = express();
 app.use(cors());
@@ -28,6 +29,7 @@ const PORT = process.env.PORT || 4000;
     await sequelize.authenticate();
     console.log('Conexion con Postgres establecida.');
     await sequelize.sync({ alter: true });
+    scheduleTodayNotifier();
     app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
   } catch (err) {
     console.error('Error al iniciar servidor:', err);

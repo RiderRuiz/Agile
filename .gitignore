@@ -1,0 +1,13 @@
+# Dependencias
+backend/node_modules/
+frontend/node_modules/
+
+# Entornos y variables sensibles
+backend/.env
+
+# Builds y artefactos
+frontend/dist/
+
+# Logs temporales
+*.log
+npm-debug.log*

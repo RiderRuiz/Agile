@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const { Debt, Payment, Reminder, Loan } = require('../models');
+const ALLOWED_METHODS = ['tarjeta', 'yape', 'plin', 'transferencia', 'efectivo', 'otro'];
 
 async function listDebts(req, res) {
   try {
@@ -17,6 +18,7 @@ async function listDebts(req, res) {
 async function payDebt(req, res) {
   try {
     const debtId = req.params.id;
+    const { method, reference } = req.body || {};
     const debt = await Debt.findOne({
       where: { id: debtId, user_id: req.user.id },
       include: [{ model: Loan, as: 'loan', attributes: ['id', 'name'] }]
@@ -41,9 +43,23 @@ async function payDebt(req, res) {
       }
     }
 
+    let paymentMethod = null;
+    if (method) {
+      const normalized = String(method).trim().toLowerCase();
+      if (!ALLOWED_METHODS.includes(normalized)) {
+        return res.status(400).json({ message: 'Medio de pago no soportado' });
+      }
+      paymentMethod = normalized;
+    }
+
     debt.status = 'paid';
     await debt.save();
-    const payment = await Payment.create({ debt_id: debt.id, amount: debt.amount });
+    const payment = await Payment.create({
+      debt_id: debt.id,
+      amount: debt.amount,
+      method: paymentMethod,
+      reference: reference ? String(reference).trim() : null
+    });
     res.json({
       message: 'Pago registrado correctamente',
       payment: {
@@ -54,7 +70,9 @@ async function payDebt(req, res) {
         debt_name: debt.name,
         due_date: debt.due_date,
         loan_id: debt.loan_id,
-        loan_name: debt.loan ? debt.loan.name : null
+        loan_name: debt.loan ? debt.loan.name : null,
+        method: payment.method,
+        reference: payment.reference
       }
     });
   } catch (err) {

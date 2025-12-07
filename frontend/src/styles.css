@@ -52,3 +52,36 @@ body {
 .notifications-list li + li {
   margin-top: 0.75rem;
 }
+
+.row-due-soon td,
+.row-due-soon th {
+  background-color: #fff7e6 !important;
+}
+
+.row-overdue td,
+.row-overdue th {
+  background-color: #ffe6e6 !important;
+}
+
+.row-overdue td:first-child,
+.row-overdue th:first-child {
+  border-left: 4px solid #dc3545;
+}
+
+.payment-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 1050;
+}
+
+.payment-modal {
+  max-width: 480px;
+  width: 100%;
+  border: none;
+  border-radius: 0.75rem;
+}
