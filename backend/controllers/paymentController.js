@@ -120,7 +120,7 @@ async function createPayPalOrder(req, res) {
         ],
         application_context: {
           return_url: `${BACKEND_URL}/api/payments/paypal/capture?debtId=${debt.id}&userId=${req.user.id}`,
-          cancel_url: `${frontUrl}/paypal-return?status=cancel`
+          cancel_url: `${frontUrl}/`
         }
       })
     });
@@ -194,9 +194,11 @@ async function capturePayPalOrder(req, res) {
       });
     }
 
-    // si viene de return_url, redirigir
+    // si viene de return_url, redirigir al home (evita 404 en SPA)
     if (req.method === 'GET') {
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/paypal-return?status=success`);
+      const frontUrlRaw = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const frontUrl = frontUrlRaw ? frontUrlRaw.replace(/\/+$/, '') : 'http://localhost:5173';
+      return res.redirect(`${frontUrl}/`);
     }
     res.json({ ok: true, data: capData });
   } catch (err) {

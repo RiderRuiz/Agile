@@ -4,7 +4,7 @@ import autoTable from "jspdf-autotable";
 
 
 const API = import.meta.env?.VITE_API_URL || "http://localhost:4000";
-const YAPE_QR_URL = import.meta.env?.VITE_YAPE_QR_URL || "";
+const YAPE_QR_URL = "/QR.jpeg";
 const ONE_WEEK_MS = 1000 * 60 * 60 * 24 * 7;
 const PAYMENT_METHODS = [
   { value: "tarjeta", label: "Tarjeta" },
@@ -1332,4 +1332,6 @@ const payWithCard = async (debtId) => {
     </div>
   );
 }
+
+
 
