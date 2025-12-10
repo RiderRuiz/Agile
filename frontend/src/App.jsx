@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+
 
 const API = import.meta.env?.VITE_API_URL || "http://localhost:4000";
 const ONE_WEEK_MS = 1000 * 60 * 60 * 24 * 7;
@@ -169,6 +170,22 @@ export default function App() {
 
   const isAuthenticated = Boolean(token);
 
+  // Cargar sesión desde storage al montar
+  useEffect(() => {
+    const savedToken = localStorage.getItem("token");
+    const savedUser = localStorage.getItem("user");
+    if (savedToken && savedUser) {
+      try {
+        setToken(savedToken);
+        setUser(JSON.parse(savedUser));
+        loadData(savedToken);
+      } catch {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+      }
+    }
+  }, []);
+
   const handleFormChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
@@ -203,6 +220,8 @@ export default function App() {
     setAuthMode("login");
     setAuthFeedback(null);
     setAppMessage(null);
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
   };
 
   const loadData = async (authToken) => {
@@ -306,6 +325,8 @@ export default function App() {
       if (authMode === "login") {
         setUser(data.user);
         setToken(data.token);
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(data.user));
         setForm(INITIAL_AUTH_FORM);
         setAuthFeedback(null);
         setAppMessage({
@@ -596,6 +617,33 @@ export default function App() {
       setPaymentReference("");
     }
   };
+
+const payWithCard = async (debtId) => {
+  if (!token) return;
+  setAppMessage(null);
+  try {
+    const res = await fetch(`${API}/api/payments/paypal/order`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ debtId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || "No se pudo iniciar el pago con tarjeta.");
+    }
+    if (data.approval_url) {
+      window.location.href = data.approval_url;
+    } else {
+      setAppMessage({ type: "warning", text: "No se recibi� URL de aprobación de PayPal." });
+    }
+  } catch (err) {
+    setAppMessage({ type: "danger", text: err.message });
+  }
+};
+
 
   const overdueByLoan = useMemo(() => {
     const map = new Map();
@@ -957,18 +1005,27 @@ export default function App() {
                                   </td>
                                   <td className="text-end">
                                     {inst.status !== "paid" && (
-                                      <button
-                                        className="btn btn-sm btn-outline-primary"
-                                        onClick={() =>
-                                          openPaymentModal(inst, {
-                                            loanHasOverdue: loan.hasOverdue,
-                                            loanName: loan.name
-                                          })
-                                        }
-                                        disabled={loan.hasOverdue}
-                                      >
-                                        Registrar pago
-                                      </button>
+                                      <div className="d-flex flex-wrap justify-content-end gap-2">
+                                        <button
+                                          className="btn btn-sm btn-outline-primary"
+                                          onClick={() =>
+                                            openPaymentModal(inst, {
+                                              loanHasOverdue: loan.hasOverdue,
+                                              loanName: loan.name
+                                            })
+                                          }
+                                          disabled={loan.hasOverdue}
+                                        >
+                                          Registrar pago
+                                        </button>
+                                        <button
+                                          className="btn btn-sm btn-primary"
+                                          onClick={() => payWithCard(inst.id)}
+                                          disabled={loan.hasOverdue}
+                                        >
+                                          Pagar con tarjeta
+                                        </button>
+                                      </div>
                                     )}
                                   </td>
                                 </tr>
@@ -1021,14 +1078,22 @@ export default function App() {
                               <td>{formatCurrency(penaltyAmount)}</td>
                               <td>{formatCurrency(totalWithPenalty)}</td>
                               <td className="text-end">
-                                <button
-                                  className="btn btn-sm btn-outline-primary"
-                                  onClick={() =>
-                                    openPaymentModal(debt, { loanName: debt.loanName || null })
-                                  }
-                                >
-                                  Registrar pago
-                                </button>
+                                <div className="d-flex flex-wrap justify-content-end gap-2">
+                                  <button
+                                    className="btn btn-sm btn-outline-primary"
+                                    onClick={() =>
+                                      openPaymentModal(debt, { loanName: debt.loanName || null })
+                                    }
+                                  >
+                                    Registrar pago
+                                  </button>
+                                  <button
+                                    className="btn btn-sm btn-primary"
+                                    onClick={() => payWithCard(debt.id)}
+                                  >
+                                    Pagar con tarjeta
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );

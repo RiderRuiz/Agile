@@ -7,7 +7,7 @@ backend/.env
 
 # Builds y artefactos
 frontend/dist/
-
+frontend/.env.local
 # Logs temporales
 *.log
 npm-debug.log*

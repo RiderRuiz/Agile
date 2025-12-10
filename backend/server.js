@@ -20,6 +20,12 @@ app.use('/api/reminders', reminderRoutes);
 app.use('/api/loans', loanRoutes);
 app.use('/api/payments', paymentRoutes);
 
+// Ruta de retorno de MP para evitar 404 en back_urls
+app.get('/mp-return', (req, res) => {
+  const status = req.query.status || 'sin_estado';
+  res.send(`Estado de pago: ${status}`);
+});
+
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 4000;
