@@ -1,9 +1,10 @@
-import React, { useMemo, useState, useEffect } from "react";
+﻿import React, { useMemo, useState, useEffect } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
 
 const API = import.meta.env?.VITE_API_URL || "http://localhost:4000";
+const YAPE_QR_URL = import.meta.env?.VITE_YAPE_QR_URL || "";
 const ONE_WEEK_MS = 1000 * 60 * 60 * 24 * 7;
 const PAYMENT_METHODS = [
   { value: "tarjeta", label: "Tarjeta" },
@@ -167,10 +168,11 @@ export default function App() {
   const [paymentModal, setPaymentModal] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState("tarjeta");
   const [paymentReference, setPaymentReference] = useState("");
+  const [yapeModal, setYapeModal] = useState(null);
 
   const isAuthenticated = Boolean(token);
 
-  // Cargar sesión desde storage al montar
+  // Cargar sesiÃ³n desde storage al montar
   useEffect(() => {
     const savedToken = localStorage.getItem("token");
     const savedUser = localStorage.getItem("user");
@@ -202,7 +204,7 @@ export default function App() {
       setLoanForm((prev) => ({ ...prev, interest: converted.toString() }));
       setAppMessage({
         type: "info",
-        text: `La tasa ingresada se ajustó automáticamente a ${converted}%`
+        text: `La tasa ingresada se ajustÃ³ automÃ¡ticamente a ${converted}%`
       });
     }
   };
@@ -339,7 +341,7 @@ export default function App() {
         setAuthMode("login");
         setAuthFeedback({
           type: "success",
-          text: data.message || "Cuenta creada. Ahora inicia sesión con tus credenciales."
+          text: data.message || "Cuenta creada. Ahora inicia sesiÃ³n con tus credenciales."
         });
         setAppMessage(null);
       }
@@ -542,7 +544,7 @@ export default function App() {
     if (options.loanHasOverdue) {
       setAppMessage({
         type: "warning",
-        text: "Debes regularizar primero las cuotas en mora de este préstamo."
+        text: "Debes regularizar primero las cuotas en mora de este prÃ©stamo."
       });
       return false;
     }
@@ -591,7 +593,7 @@ export default function App() {
     if (options.loanHasOverdue) {
       setAppMessage({
         type: "warning",
-        text: "Debes regularizar primero las cuotas en mora de este préstamo."
+        text: "Debes regularizar primero las cuotas en mora de este prÃ©stamo."
       });
       return;
     }
@@ -618,6 +620,22 @@ export default function App() {
     }
   };
 
+  const openYapeModal = (debt, options = {}) => {
+    setYapeModal({
+      id: debt.id,
+      amount: debt.amount,
+      due_date: debt.due_date,
+      loanName: options.loanName || null,
+      name: debt.name
+    });
+  };
+
+  const confirmYapePayment = async () => {
+    if (!yapeModal) return;
+    const ok = await markPaid(yapeModal.id, { method: "yape", reference: "qr-estatico" });
+    if (ok) setYapeModal(null);
+  };
+
 const payWithCard = async (debtId) => {
   if (!token) return;
   setAppMessage(null);
@@ -637,7 +655,7 @@ const payWithCard = async (debtId) => {
     if (data.approval_url) {
       window.location.href = data.approval_url;
     } else {
-      setAppMessage({ type: "warning", text: "No se recibi� URL de aprobación de PayPal." });
+      setAppMessage({ type: "warning", text: "No se recibió³ URL de aprobaciÃ³n de PayPal." });
     }
   } catch (err) {
     setAppMessage({ type: "danger", text: err.message });
@@ -761,8 +779,8 @@ const payWithCard = async (debtId) => {
                   }}
                 >
                 {authMode === "login"
-                  ? "¿No tienes cuenta? Regístrate"
-                  : "¿Ya tienes cuenta? Inicia sesión"}
+                  ? "Â¿No tienes cuenta? RegÃ­strate"
+                  : "Â¿Ya tienes cuenta? Inicia sesiÃ³n"}
               </button>
             </div>
           </div>
@@ -946,7 +964,7 @@ const payWithCard = async (debtId) => {
                           </span>
                         {loan.hasOverdue && (
                           <div className="text-danger small mt-2">
-                            Este préstamo tiene {loan.overdue_count} cuota(s) en mora. Regularízalas desde la sección inferior.
+                            Este prÃ©stamo tiene {loan.overdue_count} cuota(s) en mora. RegularÃ­zalas desde la secciÃ³n inferior.
                           </div>
                         )}
                       </div>
@@ -1025,6 +1043,13 @@ const payWithCard = async (debtId) => {
                                         >
                                           Pagar con tarjeta
                                         </button>
+                                        <button
+                                          className="btn btn-sm btn-outline-success"
+                                          onClick={() => openYapeModal(inst, { loanName: loan.name })}
+                                          disabled={loan.hasOverdue}
+                                        >
+                                          Pagar con Yape
+                                        </button>
                                       </div>
                                     )}
                                   </td>
@@ -1093,6 +1118,12 @@ const payWithCard = async (debtId) => {
                                   >
                                     Pagar con tarjeta
                                   </button>
+                                  <button
+                                    className="btn btn-sm btn-outline-success"
+                                    onClick={() => openYapeModal(debt, { loanName: debt.loanName || null })}
+                                  >
+                                    Pagar con Yape
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -1118,7 +1149,7 @@ const payWithCard = async (debtId) => {
                   <ul className="list-unstyled mb-0 notifications-list">
                     {notifications.map((item) => (
                       <li key={item.id} className="d-flex gap-3">
-                        <span className="badge bg-primary-subtle text-primary rounded-pill mt-1">•</span>
+                        <span className="badge bg-primary-subtle text-primary rounded-pill mt-1">â€¢</span>
                         <span>{item.text}</span>
                       </li>
                     ))}
@@ -1246,9 +1277,59 @@ const payWithCard = async (debtId) => {
                 </button>
               </div>
             </div>
+      </div>
+    </div>
+  )}
+
+      {yapeModal && (
+        <div className="payment-modal-overlay">
+          <div className="payment-modal card shadow-lg">
+            <div className="card-body">
+              <div className="d-flex justify-content-between align-items-start mb-3">
+                <div>
+                  <h5 className="mb-1">Pagar con Yape</h5>
+                  <div className="text-muted small">
+                    {yapeModal.loanName ? `${yapeModal.loanName} - ` : ""}
+                    {yapeModal.name}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={() => setYapeModal(null)}
+                  aria-label="Cerrar modal Yape"
+                >
+                  X
+                </button>
+              </div>
+
+              <div className="mb-3">
+                <div className="fw-semibold">Monto: {formatCurrency(yapeModal.amount)}</div>
+                <div className="text-muted small">Vence: {formatDateDisplay(yapeModal.due_date)}</div>
+              </div>
+
+              {YAPE_QR_URL ? (
+                <div className="text-center mb-3">
+                  <img src={YAPE_QR_URL} alt="QR Yape" style={{ maxWidth: "220px" }} />
+                  <div className="text-muted small mt-2">Escanea y paga exactamente este monto.</div>
+                </div>
+              ) : (
+                <p className="text-danger small">Configura VITE_YAPE_QR_URL para mostrar tu QR.</p>
+              )}
+
+              <div className="d-flex justify-content-end gap-2">
+                <button type="button" className="btn btn-outline-secondary" onClick={() => setYapeModal(null)}>
+                  Cancelar
+                </button>
+                <button type="button" className="btn btn-success" onClick={confirmYapePayment}>
+                  Ya pagué
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
+
