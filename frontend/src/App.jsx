@@ -838,6 +838,7 @@ const payWithCard = async (debtId) => {
                       onChange={(e) => handleLoanFormChange("principal", e.target.value)}
                       placeholder="5000"
                       min="0"
+                      step="0.01"
                     />
                   </div>
                   <div className="col-md-4">
